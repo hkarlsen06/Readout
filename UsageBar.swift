@@ -201,6 +201,7 @@ final class Bar: NSView {
 @MainActor func row(_ leftText: NSTextField, _ right: NSTextField? = nil, bar: (Double, NSColor)? = nil) -> NSMenuItem {
     let h: CGFloat = bar == nil ? 24 : 38
     let v = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: h))
+    v.autoresizingMask = .width  // the menu stretches rows to its full width (e.g. for the ⌘R column)
     let y = h - 21
     if let right {
         right.frame.size.width = min(right.frame.width, 150)
@@ -210,11 +211,13 @@ final class Bar: NSView {
     v.addSubview(leftText)
     if let right {
         right.setFrameOrigin(NSPoint(x: menuWidth - 14 - right.frame.width, y: y))
+        right.autoresizingMask = .minXMargin
         v.addSubview(right)
     }
     if let bar {
         let b = Bar(frame: NSRect(x: 14, y: 7, width: menuWidth - 28, height: 6))
         (b.fraction, b.color) = bar
+        b.autoresizingMask = .width
         v.addSubview(b)
     }
     let item = NSMenuItem()
