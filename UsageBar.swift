@@ -133,8 +133,9 @@ func titleText(_ r: Result<Usage, Error>) -> String {
 
 let repo = "hkarlsen06/UsageBar"
 // Only bundles signed with our Developer ID are installed.
-// Developer ID CA + leaf OIDs: an Apple Development cert from the same team would pass an OU-only check.
-let signingRequirement = #"anchor apple generic and identifier "dev.hkarlsen06.usagebar" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "48ZSLD4RMP""#
+// Developer ID CA + leaf OIDs (an Apple Development cert from the same team would pass an OU-only check), plus notarized.
+// Must match REQ in release.sh.
+let signingRequirement = #"anchor apple generic and identifier "dev.hkarlsen06.usagebar" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "48ZSLD4RMP" and notarized"#
 
 struct Release { let version: String; let zip: URL; let page: URL }
 
@@ -158,7 +159,11 @@ func install(_ r: Release) async throws {
     defer { try? FileManager.default.removeItem(at: dir); try? FileManager.default.removeItem(at: zip) }
     let new = dir.appendingPathComponent("UsageBar.app")
     guard shell(["/usr/bin/ditto", "-x", "-k", zip.path, dir.path]) != nil,
-          shell(["/usr/bin/codesign", "--verify", "--deep", "--strict", "-R=\(signingRequirement)", new.path]) != nil
+          (try? FileManager.default.attributesOfItem(atPath: new.path)[.type] as? FileAttributeType) == .typeDirectory,  // no symlinks
+          shell(["/usr/bin/codesign", "--verify", "--deep", "--strict", "-R=\(signingRequirement)", new.path]) != nil,
+          // Info.plist is sealed by the signature, so this blocks rollbacks to an older signed build under a newer tag.
+          let v = Bundle(url: new)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+          v == r.version, v.compare(currentVersion, options: .numeric) == .orderedDescending
     else { throw Err("Update failed verification") }
     _ = try FileManager.default.replaceItemAt(app, withItemAt: new)
     let relaunch = Process()
@@ -232,7 +237,7 @@ let digits = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
     var updated = Date()
     var available: Release?   // newer release we couldn't install automatically
     var updateNote: String?
-    var refreshing = false
+    var refreshing = false, installing = false
 
     func applicationDidFinishLaunching(_ n: Notification) {
         item.button?.title = "…"
@@ -286,7 +291,10 @@ let digits = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
     @objc func checkForUpdates() { update(manual: true) }
 
     func update(manual: Bool) {
+        guard !installing, currentVersion != "0.0.0" else { return }  // 0.0.0 = local dev build
+        installing = true
         Task {
+            defer { installing = false }
             let r: Release?
             do { r = try await newerRelease() } catch { if manual { updateNote = "Update check failed" }; return }
             guard let r else { if manual { updateNote = "Up to date" }; return }

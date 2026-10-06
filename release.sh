@@ -11,10 +11,13 @@ TAG="v$VERSION"
 APP=UsageBar.app
 ZIP=UsageBar.zip
 # Stricter than the bare OU check: Apple Development certs carry the same team OU and would pass that.
-REQ='anchor apple generic and identifier "dev.hkarlsen06.usagebar" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "48ZSLD4RMP"'
+REQ='anchor apple generic and identifier "dev.hkarlsen06.usagebar" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "48ZSLD4RMP" and notarized'  # must match signingRequirement in UsageBar.swift
 
 [ -z "$(git status --porcelain)" ] || { echo "git tree is dirty; commit or stash first" >&2; exit 1; }
 ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || { echo "tag $TAG already exists" >&2; exit 1; }
+SHA=$(git rev-parse HEAD)
+git fetch -q origin main && [ "$SHA" = "$(git rev-parse origin/main)" ] || { echo "HEAD must be pushed and equal origin/main" >&2; exit 1; }
+unset SIGN_ID
 gh api user --jq .login >/dev/null   # fail now, not after a 10-minute notarization (gh auth status exits 1 over any stale account)
 
 ./build.sh "$VERSION"
@@ -36,7 +39,5 @@ codesign --verify --deep --strict -R="$REQ" "$V"
 xcrun stapler validate "$V"
 [ "$(defaults read "$V/Contents/Info" CFBundleShortVersionString)" = "$VERSION" ]
 
-git tag "$TAG"
-git push origin "$TAG"
-gh release create "$TAG" "$ZIP" --verify-tag --title "UsageBar $VERSION" --generate-notes
+gh release create "$TAG" "$ZIP" -R hkarlsen06/UsageBar --target "$SHA" --title "UsageBar $VERSION" --generate-notes
 echo "Released $TAG"
