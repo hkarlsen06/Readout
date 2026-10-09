@@ -5,10 +5,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 VERSION="${1:-0.0.0}"
-MIN_MACOS=13.0   # SMAppService (launch at login) and Task.sleep(for:) need macOS 13
-BUNDLE_ID=dev.hkarlsen06.usagebar
+MIN_MACOS=13.0   # SMAppService (launch at login), SwiftUI Grid and Task.sleep(for:) need macOS 13
+BUNDLE_ID=dev.hkarlsen06.readout
 SIGN_ID="${SIGN_ID:-Developer ID Application: Hjalmar Karlsen (48ZSLD4RMP)}"
-APP=UsageBar.app
+APP=Readout.app
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 rm -rf "$APP"
@@ -16,9 +16,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 # Universal binary
 for arch in arm64 x86_64; do
-  swiftc -O -swift-version 5 -target "$arch-apple-macos$MIN_MACOS" UsageBar.swift -o "$TMP/UsageBar-$arch"
+  swiftc -O -swift-version 5 -target "$arch-apple-macos$MIN_MACOS" -import-objc-header IOHIDPrivate.h Readout.swift -o "$TMP/Readout-$arch"
 done
-lipo -create "$TMP"/UsageBar-* -output "$APP/Contents/MacOS/UsageBar"
+lipo -create "$TMP"/Readout-* -output "$APP/Contents/MacOS/Readout"
 
 # Icon: drawn in code (two usage bars on a rounded tile), then iconutil -> .icns
 cat > "$TMP/icon.swift" <<'SWIFT'
@@ -60,17 +60,17 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleExecutable</key><string>UsageBar</string>
+  <key>CFBundleExecutable</key><string>Readout</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>UsageBar</string>
-  <key>CFBundleDisplayName</key><string>UsageBar</string>
+  <key>CFBundleName</key><string>Readout</string>
+  <key>CFBundleDisplayName</key><string>Readout</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>LSMinimumSystemVersion</key><string>$MIN_MACOS</string>
-  <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
@@ -83,4 +83,4 @@ plutil -lint "$APP/Contents/Info.plist" >/dev/null
 TS=--timestamp; [ "$SIGN_ID" = - ] && TS=--timestamp=none
 codesign --force --sign "$SIGN_ID" --options runtime "$TS" "$APP"
 codesign --verify --deep --strict "$APP"
-echo "Built $(pwd)/$APP v$VERSION (min macOS $MIN_MACOS, $(lipo -archs "$APP/Contents/MacOS/UsageBar"))"
+echo "Built $(pwd)/$APP v$VERSION (min macOS $MIN_MACOS, $(lipo -archs "$APP/Contents/MacOS/Readout"))"

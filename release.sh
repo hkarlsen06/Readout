@@ -1,17 +1,17 @@
 #!/bin/bash
 # Usage: ./release.sh 1.2.3
-# Builds, signs, notarizes, staples, verifies, tags, and publishes hkarlsen06/UsageBar v1.2.3.
-# One-time setup: xcrun notarytool store-credentials usagebar --apple-id ... --team-id 48ZSLD4RMP
+# Builds, signs, notarizes, staples, verifies, tags, and publishes hkarlsen06/Readout v1.2.3.
+# One-time setup (profile name predates the rename): xcrun notarytool store-credentials usagebar --apple-id ... --team-id 48ZSLD4RMP
 set -euo pipefail
 cd "$(dirname "$0")"
 
 VERSION="${1:?usage: release.sh <version, e.g. 1.2.3>}"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version must be N.N.N" >&2; exit 1; }
 TAG="v$VERSION"
-APP=UsageBar.app
-ZIP=UsageBar.zip
+APP=Readout.app
+ZIP=Readout.zip
 # Stricter than the bare OU check: Apple Development certs carry the same team OU and would pass that.
-REQ='anchor apple generic and identifier "dev.hkarlsen06.usagebar" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "48ZSLD4RMP" and notarized'  # must match signingRequirement in UsageBar.swift
+REQ='anchor apple generic and identifier "dev.hkarlsen06.readout" and certificate 1[field.1.2.840.113635.100.6.2.6] and certificate leaf[field.1.2.840.113635.100.6.1.13] and certificate leaf[subject.OU] = "48ZSLD4RMP" and notarized'  # must match signingRequirement in Readout.swift
 
 [ -z "$(git status --porcelain)" ] || { echo "git tree is dirty; commit or stash first" >&2; exit 1; }
 ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || { echo "tag $TAG already exists" >&2; exit 1; }
@@ -39,5 +39,5 @@ codesign --verify --deep --strict -R="$REQ" "$V"
 xcrun stapler validate "$V"
 [ "$(defaults read "$V/Contents/Info" CFBundleShortVersionString)" = "$VERSION" ]
 
-gh release create "$TAG" "$ZIP" -R hkarlsen06/UsageBar --target "$SHA" --title "UsageBar $VERSION" --generate-notes
+gh release create "$TAG" "$ZIP" -R hkarlsen06/Readout --target "$SHA" --title "Readout $VERSION" --generate-notes
 echo "Released $TAG"
