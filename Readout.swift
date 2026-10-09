@@ -11,11 +11,29 @@ struct Err: LocalizedError {
     init(_ s: String, transient: Bool = false) { errorDescription = s; self.transient = transient }
 }
 
-let claudeColor = NSColor(name: nil) { ap in
-    ap.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        ? NSColor(srgbRed: 0.85, green: 0.47, blue: 0.34, alpha: 1)
-        : NSColor(srgbRed: 0.72, green: 0.32, blue: 0.19, alpha: 1)  // darker so it stays readable on a light menu bar
-}, codexColor = NSColor.systemBlue
+// OKLCH -> sRGB (Björn Ottosson's OKLab), lowering chroma until the colour fits in sRGB.
+func oklch(_ L: Double, _ C: Double, _ hue: Double) -> NSColor {
+    func rgb(_ c: Double) -> [Double] {
+        let a = c * cos(hue * .pi / 180), b = c * sin(hue * .pi / 180)
+        let l = L + 0.3963377774 * a + 0.2158037573 * b, m = L - 0.1055613458 * a - 0.0638541728 * b,
+            s = L - 0.0894841775 * a - 1.2914855480 * b
+        let (l3, m3, s3) = (l * l * l, m * m * m, s * s * s)
+        return [4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3,
+                -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3,
+                -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3]
+    }
+    var c = C
+    while c > 0, rgb(c).contains(where: { $0 < -1e-4 || $0 > 1 + 1e-4 }) { c -= 0.002 }
+    let v = rgb(max(c, 0)).map { x in min(max(x, 0), 1) }.map { $0 <= 0.0031308 ? 12.92 * $0 : 1.055 * pow($0, 1 / 2.4) - 0.055 }
+    return NSColor(srgbRed: v[0], green: v[1], blue: v[2], alpha: 1)
+}
+
+// Brand hue and chroma kept; lightness picked for contrast: light on a dark menu bar/menu, dark on a light one.
+func toolColor(chroma: Double, hue: Double) -> NSColor {
+    let dark = oklch(0.82, chroma, hue), light = oklch(0.45, chroma, hue)
+    return NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light }
+}
+let claudeColor = toolColor(chroma: 0.14, hue: 39), codexColor = toolColor(chroma: 0.2, hue: 256)
 let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
 
 // Killed after 30 s so a stuck keychain prompt can't wedge refreshes forever.
