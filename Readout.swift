@@ -291,7 +291,7 @@ final class StatusView: NSView {
             let lw = labelW(c), vw = valueW(c)
             for (i, row) in stats.prefix(2).enumerated() {
                 (row[c].0 as NSString).draw(at: NSPoint(x: x, y: rowY[i] + 1.6),
-                                            withAttributes: [.font: labelFont, .foregroundColor: NSColor.secondaryLabelColor])
+                                            withAttributes: [.font: labelFont, .foregroundColor: NSColor.labelColor.withAlphaComponent(0.75)])
                 (row[c].1 as NSString).draw(at: NSPoint(x: x + lw + pad + vw - w(row[c].1, valueFont), y: rowY[i]),
                                             withAttributes: [.font: valueFont, .foregroundColor: NSColor.labelColor])
             }
