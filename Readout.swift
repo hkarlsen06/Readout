@@ -3,7 +3,14 @@ import IOKit
 import ServiceManagement
 import SwiftUI
 
-struct Window { let name: String; let used: Double; let reset: Date?; var inTitle = true }
+struct Window {
+    let name: String; let used: Double; let reset: Date?; var length: TimeInterval? = nil; var inTitle = true
+    // Fraction of the window still to go: where the bar would sit if usage tracked time evenly.
+    var pace: Double? {
+        guard let reset, let length, length > 0 else { return nil }
+        return min(1, max(0, reset.timeIntervalSinceNow / length))
+    }
+}
 struct Usage { var windows: [Window]; var plan: String? = nil; var credits = 0.0; var limitReached = false }
 struct Err: LocalizedError {
     let errorDescription: String?
@@ -85,18 +92,19 @@ func claude() async throws -> Usage {
     let frac = ISO8601DateFormatter(), plain = ISO8601DateFormatter()
     frac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let date = { (s: Any?) in (s as? String).flatMap { frac.date(from: $0) ?? plain.date(from: $0) } }
-    let keys = [("five_hour", "5-hour", true), ("seven_day", "Weekly", true),
-                ("seven_day_opus", "Weekly Opus", false), ("seven_day_sonnet", "Weekly Sonnet", false)]
-    let windows = keys.compactMap { key, name, inTitle -> Window? in
+    let hour = 3600.0, week = 7 * 24 * hour
+    let keys = [("five_hour", "5-hour", 5 * hour, true), ("seven_day", "Weekly", week, true),
+                ("seven_day_opus", "Weekly Opus", week, false), ("seven_day_sonnet", "Weekly Sonnet", week, false)]
+    let windows = keys.compactMap { key, name, length, inTitle -> Window? in
         guard let w = j[key] as? [String: Any], let used = w["utilization"] as? Double else { return nil }
-        return Window(name: name, used: used, reset: date(w["resets_at"]), inTitle: inTitle)
+        return Window(name: name, used: used, reset: date(w["resets_at"]), length: length, inTitle: inTitle)
     }
     // Newer per-model weekly limits only appear in `limits`.
     let scoped = (j["limits"] as? [[String: Any]] ?? []).compactMap { l -> Window? in
         guard l["kind"] as? String == "weekly_scoped", let used = l["percent"] as? Double,
               let model = ((l["scope"] as? [String: Any])?["model"] as? [String: Any])?["display_name"] as? String
         else { return nil }
-        return Window(name: "Weekly \(model)", used: used, reset: date(l["resets_at"]), inTitle: false)
+        return Window(name: "Weekly \(model)", used: used, reset: date(l["resets_at"]), length: week, inTitle: false)
     }
     return Usage(windows: windows + scoped.filter { s in !windows.contains { $0.name == s.name } })
 }
@@ -113,11 +121,11 @@ func codex() async throws -> Usage {
     let rl = j["rate_limit"] as? [String: Any] ?? [:], cr = j["credits"] as? [String: Any] ?? [:]
     let windows: [Window] = ["primary_window", "secondary_window"].compactMap { key in
         guard let w = rl[key] as? [String: Any], let used = w["used_percent"] as? Double else { return nil }
-        let hours = Int(((w["limit_window_seconds"] as? Double ?? 0) / 3600).rounded())
+        let seconds = w["limit_window_seconds"] as? Double ?? 0, hours = Int((seconds / 3600).rounded())
         let name = hours == 0 ? "Limit" : hours < 24 ? "\(hours)-hour" : hours == 168 ? "Weekly" : "\(hours / 24)-day"
         let reset = (w["reset_at"] as? Double).map(Date.init(timeIntervalSince1970:))
             ?? (w["reset_after_seconds"] as? Double).map { Date(timeIntervalSinceNow: $0) }
-        return Window(name: name, used: used, reset: reset)
+        return Window(name: name, used: used, reset: reset, length: seconds > 0 ? seconds : nil)
     }
     let balance = Double("\(cr["balance"] ?? 0)") ?? 0
     return Usage(windows: windows,
@@ -322,13 +330,18 @@ final class StatusView: NSView {
 
 let cardBackground = RoundedRectangle(cornerRadius: 9)
 
+// Tick marks the pace: bar past it = under pace, short of it = burning faster than time.
 struct Meter: View {
-    let fraction: Double, color: Color
+    let fraction: Double, color: Color, pace: Double?
     var body: some View {
         GeometryReader { g in
             ZStack(alignment: .leading) {
                 Capsule().fill(.quaternary)
                 Capsule().fill(color).frame(width: g.size.width * fraction)
+                if let pace {
+                    Capsule().fill(.primary).frame(width: 2).padding(.vertical, -2)
+                        .offset(x: min(max(0, g.size.width * pace - 1), g.size.width - 2))
+                }
             }
         }
         .frame(height: 5)
@@ -381,7 +394,7 @@ struct UsageCard: View {
                             Text("\(left(w))%").font(.system(size: 12, weight: .medium)).monospacedDigit()
                             Text("↻ \(until(w.reset))").font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
                         }
-                        Meter(fraction: Double(left(w)) / 100, color: color)
+                        Meter(fraction: Double(left(w)) / 100, color: color, pace: w.pace)
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("\(w.name): \(left(w))% left, resets in \(until(w.reset))")
